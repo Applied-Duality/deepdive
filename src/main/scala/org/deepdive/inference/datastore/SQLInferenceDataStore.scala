@@ -476,8 +476,8 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       schema.foreach { case(variable, dataType) =>
         val Array(relation, column) = variable.split('.')
         executeQuery(s"""SELECT fast_seqassign('${relation.toLowerCase()}', ${idoffset});""")
-        issueQuery(s"""SELECT max(id) FROM ${relation}""") { rs =>
-          idoffset = 1 + rs.getLong(1)
+        issueQuery(s"""SELECT COUNT(*) FROM ${relation}""") { rs =>
+          idoffset += rs.getLong(1)
         }
       }
     } else {

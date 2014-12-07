@@ -525,21 +525,6 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
         case RealArrayType(x) => x.toInt
       }
 
-      if(variableDataType == 2 || variableDataType == 3){
-
-      } else {
-        // This cannot be parsed in def randFunc for now.
-        // assign holdout - if not user-defined, randomly select from evidence variables of each variable table
-        calibrationSettings.holdoutQuery match {
-          case Some(s) =>
-          case None => execute(s"""
-            INSERT INTO ${VariablesHoldoutTable}
-            SELECT id FROM ${relation}
-            WHERE ${randomFunction} < ${calibrationSettings.holdoutFraction} AND ${column} IS NOT NULL;
-            """)
-        }
-      }
-
 
       // Create a cardinality table for the variable
       // note we use five-digit fixed-length representation here
@@ -559,24 +544,42 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       // add a column to variable table to denote variable type - query, evidence, observation
       // variable table join with holdout table 
       // - a variable is an evidence if it has initial value and it is not holdout
-      val variableTypeColumn = "__dd_variable_type__"
-      execute(s"""
-        ALTER TABLE ${relation} ADD COLUMN ${variableTypeColumn} int;
+      val variableTypeTable = "dd_graph_variable_type"
+      execute(s"""DROP TABLE IF EXISTS ${variableTypeTable} CASCADE;
+        CREATE TABLE ${variableTypeTable}(variable_id bigint, type int);
         """)
-      execute(s"""
-        UPDATE ${relation} SET ${variableTypeColumn} = ${cast( s"${column} IS NOT NULL", "int" )};
-        UPDATE ${relation} SET ${variableTypeColumn} = 0 
-        WHERE ${relation}.id IN (SELECT variable_id FROM ${VariablesHoldoutTable});
-        """)
+
+      execute(s"""INSERT INTO ${variableTypeTable} 
+        SELECT id, ${cast( s"${column} IS NOT NULL", "int" )}
+        FROM ${relation};""")
 
       // assign observation
       calibrationSettings.observationQuery match {
       case Some(query) => execute(s"""
-        UPDATE ${relation} SET ${variableTypeColumn} = 2
-        WHERE ${relation}.id IN (SELECT variable_id FROM ${VariablesObservationTable})
-          AND ${relation}.${column} IS NOT NULL;
+        UPDATE ${variableTypeTable} SET type = 2
+        WHERE variable_id IN (SELECT variable_id FROM ${VariablesObservationTable})
+          AND type = 1;
         """)
       case None =>
+      }
+
+      if(variableDataType == 2 || variableDataType == 3){
+
+      } else {
+        // This cannot be parsed in def randFunc for now.
+        // assign holdout - if not user-defined, randomly select from evidence variables of each variable table
+        calibrationSettings.holdoutQuery match {
+          case Some(s) => execute(s"""
+            UPDATE ${variableTypeTable} SET type = 0 
+            WHERE variable_id IN (SELECT variable_id FROM ${VariablesHoldoutTable})
+              AND type = 1;
+            """)
+          case None => execute(s"""
+            UPDATE ${variableTypeTable} SET type = 0 
+            WHERE ${randomFunction} < ${calibrationSettings.holdoutFraction} 
+              AND type = 1;
+            """)
+        }
       }
 
       // dump variables
@@ -586,13 +589,12 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       }
       du.unload(s"dd_variables_${relation}", s"${groundingPath}/dd_variables_${relation}", 
         dbSettings, parallelGrounding,
-        s"""SELECT id, ${variableTypeColumn}, 
-        CASE WHEN ${variableTypeColumn} = 0 THEN 0 ELSE ${initvalueCast} END AS initvalue, 
-        ${variableDataType} AS type, ${cardinality} AS cardinality
-        FROM ${relation}
+        s"""SELECT id, ${variableTypeTable}.type AS evidence_type, 
+        CASE WHEN evidence_type = 0 THEN 0 ELSE ${initvalueCast} END AS initvalue, 
+        ${variableDataType} AS data_type, ${cardinality} AS cardinality
+        FROM ${relation}, ${variableTypeTable}
+        WHERE id = variable_id;
         """)
-
-      execute(s"""ALTER TABLE ${relation} DROP COLUMN ${variableTypeColumn} CASCADE;""")
 
     }
 

@@ -590,10 +590,10 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       du.unload(s"dd_variables_${relation}", s"${groundingPath}/dd_variables_${relation}", 
         dbSettings, parallelGrounding,
         s"""SELECT id, ${variableTypeTable}.type AS evidence_type, 
-        CASE WHEN evidence_type = 0 THEN 0 ELSE ${initvalueCast} END AS initvalue, 
+        CASE WHEN ${variableTypeTable}.type = 0 THEN 0 ELSE ${initvalueCast} END AS initvalue, 
         ${variableDataType} AS data_type, ${cardinality} AS cardinality
         FROM ${relation}, ${variableTypeTable}
-        WHERE id = variable_id;
+        WHERE ${relation}.id = ${variableTypeTable}.variable_id;
         """)
 
     }

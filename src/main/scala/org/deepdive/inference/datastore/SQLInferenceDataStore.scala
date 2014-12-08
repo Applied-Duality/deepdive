@@ -546,7 +546,7 @@ trait SQLInferenceDataStore extends InferenceDataStore with Logging {
       // - a variable is an evidence if it has initial value and it is not holdout
       val variableTypeTable = "dd_graph_variable_type"
       execute(s"""DROP TABLE IF EXISTS ${variableTypeTable} CASCADE;
-        CREATE TABLE ${variableTypeTable}(variable_id bigint, type int);
+        CREATE TABLE ${variableTypeTable}(variable_id bigint key, type int);
         """)
 
       execute(s"""INSERT INTO ${variableTypeTable} 
